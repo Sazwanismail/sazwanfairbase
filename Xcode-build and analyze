@@ -1,0 +1,400 @@
+Do you mean (A) how to run xcodebuild analyze locally, (B) how to run it in CI (GitHub Actions), or (C) help interpreting/fixing analyzer warnings? Tell me which and give the workspace/scheme (or repo) if you want a ready-to-run workflow or exact commands.
+
+Quick reference (pick/adjust for your project):
+
+1) Run analyzer locally
+- Example (workspace + scheme):
+  xcodebuild -workspace MyApp.xcworkspace -scheme MyScheme clean analyze -configuration Debug -sdk iphonesimulator -resultBundlePath ./build/analyze.xcresult
+
+- Notes:
+  - Use -sdk iphonesimulator and/or add CODE_SIGNING_REQUIRED=NO to avoid signing issues for analysis.
+  - The analyzer output is printed to stdout; using -resultBundlePath saves an .xcresult you can inspect with xcrun xcresulttool.
+
+2) Save and inspect results
+- Save result bundle:
+  -resultBundlePath ./build/analyze.xcresult
+- Convert to JSON:
+  xcrun xcresulttool get --path ./build/analyze.xcresult --format json > analyze-result.json
+- You can open the .xcresult in Xcode (Window → Organizer → Open Developer Tool → Result Browser) or use third‑party tools to parse issues.
+
+3) Run analyzer in GitHub Actions (macOS runner)
+- Minimal job snippet:
+  jobs:
+    analyze:
+      runs-on: macos-latest
+      steps:
+        - uses: actions/checkout@v4
+        - name: Install deps
+          run: |
+            # e.g. bundle install / pod install if you use CocoaPods
+            pod install --repo-update || true
+        - name: Build & Analyze
+          run: xcodebuild -workspace MyApp.xcworkspace -scheme MyScheme clean analyze -configuration Debug -sdk iphonesimulator -resultBundlePath build/analyze.xcresult
+        - name: Upload analyze result
+          uses: actions/upload-artifact@v4
+          with:
+            name: analyze-result
+            path: build/analyze.xcresult
+
+4) Alternatives / tips
+- If you prefer clang’s scan-build, install LLVM (brew) and run:
+  scan-build xcodebuild build -workspace MyApp.xcworkspace -scheme MyScheme
+- Analyzer can be slow — run on a smaller target or a single file if iterating.
+- Common issues:
+  - Code signing errors: use -sdk iphonesimulator or CODE_SIGNING_REQUIRED=NO
+  - Missing pods/Carthage: run pod install or equivalent before xcodebuild
+  - Large .xcresult: upload as artifact rather than printing to logs
+
+If you want, I can:
+- Generate a complete GitHub Actions workflow file for your repo (tell me workspace/scheme, any dependency steps),
+- Help parse analyzer output if you paste sample warnings,
+- Or give commands tuned for a single-target project or Swift Package Manager. 
+
+— GitHub Copilot Chat Assistant
+Mahu lagi tentang apa tepatnya? Pilih salah satu (atau jawab bebas):
+
+A) Cara jalankan xcodebuild analyze secara lokal (contoh penuh + flags).  
+B) Contoh GitHub Actions workflow lengkap untuk run + upload hasil.  
+C) Cara buka / konversi .xcresult → JSON atau SARIF dan buat anotasi PR.  
+D) Tolong tafsir / betulkan amaran analyzer (paste contoh amaran).  
+E) Tips optimasi (jalankan lebih cepat, scope analyzer, skip signing, dll).
+
+Beri juga workspace/scheme atau repo (atau contoh amaran) kalau pilih B/C/D.
+## Xcode Build & Analyze Commands
+
+Xcode provides several commands for building and analyzing iOS/macOS projects. Here are the key commands and their usage:
+
+### Basic Build & Analyze Commands
+
+| Command | Purpose | Usage |
+|---------|---------|--------|
+| **`xcodebuild build`** | Compiles the project | `xcodebuild -project MyApp.xcodeproj -scheme MyApp build` |
+| **`xcodebuild analyze`** | Runs static analysis | `xcodebuild -project MyApp.xcodeproj -scheme MyApp analyze` |
+| **`xcodebuild test`** | Runs tests | `xcodebuild test -project MyApp.xcodeproj -scheme MyApp -destination 'platform=iOS Simulator,name=iPhone 15'` |
+
+### Complete Build & Analyze Workflow
+
+```bash
+# 1. Clean the project
+xcodebuild clean -project MyApp.xcodeproj -scheme MyApp
+
+# 2. Build the project
+xcodebuild build -project MyApp.xcodeproj -scheme MyApp -configuration Debug
+
+# 3. Run static analysis
+xcodebuild analyze -project MyApp.xcodeproj -scheme MyApp -configuration Debug
+
+# 4. Run tests
+xcodebuild test -project MyApp.xcodeproj -scheme MyApp -destination 'platform=iOS Simulator,name=iPhone 15'
+```
+
+### Advanced Analysis Options
+
+```bash
+# Analyze with specific SDK
+xcodebuild analyze -project MyApp.xcodeproj -scheme MyApp -sdk iphonesimulator
+
+# Analyze with custom build settings
+xcodebuild analyze -project MyApp.xcodeproj -scheme MyApp CLANG_ANALYZER_OUTPUT=plist-html
+
+# Analyze for different configurations
+xcodebuild analyze -project MyApp.xcodeproj -scheme MyApp -configuration Debug
+xcodebuild analyze -project MyApp.xcodeproj -scheme MyApp -configuration Release
+```
+
+### Using Workspaces
+
+```bash
+# For .xcworkspace files (common with CocoaPods)
+xcodebuild -workspace MyApp.xcworkspace -scheme MyApp clean build analyze
+
+# With multiple schemes
+xcodebuild -workspace MyApp.xcworkspace -scheme "MyApp-Development" analyze
+xcodebuild -workspace MyApp.xcworkspace -scheme "MyApp-Production" analyze
+```
+
+### Output and Reporting
+
+```bash
+# Save build logs to file
+xcodebuild build -project MyApp.xcodeproj -scheme MyApp > build.log 2>&1
+
+# Generate JSON compilation database (useful for other tools)
+xcodebuild -project MyApp.xcodeproj -scheme MyApp | xcpretty -r json-compilation-database
+
+# Analyze with detailed output
+xcodebuild analyze -project MyApp.xcodeproj -scheme MyApp CLANG_ANALYZER_OUTPUT_DIR=analyzer_results
+```
+
+### CI/CD Integration Examples
+
+```bash
+#!/bin/bash
+# Example CI script
+
+PROJECT="MyApp.xcodeproj"
+SCHEME="MyApp"
+DESTINATION="platform=iOS Simulator,name=iPhone 15,OS=latest"
+
+echo "🧹 Cleaning project..."
+xcodebuild clean -project $PROJECT -scheme $SCHEME
+
+echo "🔍 Running static analysis..."
+xcodebuild analyze -project $PROJECT -scheme $SCHEME
+
+if [ $? -eq 0 ]; then
+    echo "✅ Static analysis passed"
+else
+    echo "❌ Static analysis found issues"
+    exit 1
+fi
+
+echo "🏗️ Building project..."
+xcodebuild build -project $PROJECT -scheme $SCHEME -configuration Debug
+
+echo "🧪 Running tests..."
+xcodebuild test -project $PROJECT -scheme $SCHEME -destination "$DESTINATION"
+```
+
+### Common Issues and Solutions
+
+```bash
+# Fix: "Scheme MyApp is not configured for building"
+xcodebuild -list # View available schemes and configurations
+
+# Fix: Code signing issues
+xcodebuild -project MyApp.xcodeproj -scheme MyApp -allowProvisioningUpdates
+
+# Fix: Simulator not available
+xcrun simctl list devices # List available simulators
+
+# Fix: Analyze doesn't show warnings
+xcodebuild analyze -project MyApp.xcodeproj -scheme MyApp CLANG_ANALYZER_VERBOSE=YES
+```
+
+### Using xcodebuild with Fastlane
+
+If you're using Fastlane, you can integrate analysis into your lanes:
+
+```ruby
+# Fastfile
+lane :analyze do
+  # Clean
+  xcodebuild(
+    project: "MyApp.xcodeproj",
+    scheme: "MyApp",
+    action: "clean"
+  )
+  
+  # Analyze
+  xcodebuild(
+    project: "MyApp.xcodeproj", 
+    scheme: "MyApp",
+    action: "analyze",
+    configuration: "Debug"
+  )
+end
+```
+
+### Environment Variables for Enhanced Analysis
+
+```bash
+# Enable more detailed analysis
+export CLANG_ANALYZER_VERBOSE=YES
+export CLANG_ANALYZER_OUTPUT=plist-html
+export CLANG_ANALYZER_OUTPUT_DIR="$(pwd)/clang-reports"
+
+# Run analysis with enhanced settings
+xcodebuild analyze -project MyApp.xcodeproj -scheme MyApp
+```
+
+These commands provide comprehensive build and analysis capabilities for Xcode projects, helping you maintain code quality and catch issues early in the development process.
+## Xcode Build & Analyze Commands with Official Documentation Links
+
+### 📚 Official Apple Documentation
+- [**xcodebuild Man Page**](https://developer.apple.com/library/archive/documentation/Darwin/Reference/ManPages/man1/xcodebuild.1.html) - Complete command reference
+- [**Building from Command Line**](https://developer.apple.com/documentation/xcode/building-your-app-from-the-command-line) - Apple's official guide
+- [**Static Analysis**](https://developer.apple.com/documentation/xcode/analyzing-your-code-using-the-static-analyzer) - About Xcode's static analyzer
+
+### 🔧 Basic Build & Analyze Commands
+
+| Command | Purpose | Documentation |
+|---------|---------|---------------|
+| **`xcodebuild build`** | Compiles the project | [Build Command Reference](https://developer.apple.com/library/archive/documentation/Darwin/Reference/ManPages/man1/xcodebuild.1.html) |
+| **`xcodebuild analyze`** | Runs static analysis | [Static Analyzer Guide](https://developer.apple.com/documentation/xcode/analyzing-your-code-using-the-static-analyzer) |
+| **`xcodebuild test`** | Runs tests | [Testing with xcodebuild](https://developer.apple.com/documentation/xcode/testing-your-apps-in-xcode) |
+
+### 🚀 Complete Build & Analyze Workflow
+
+```bash
+# 1. Clean the project
+xcodebuild clean -project MyApp.xcodeproj -scheme MyApp
+
+# 2. Build the project
+xcodebuild build -project MyApp.xcodeproj -scheme MyApp -configuration Debug
+
+# 3. Run static analysis
+xcodebuild analyze -project MyApp.xcodeproj -scheme MyApp -configuration Debug
+
+# 4. Run tests
+xcodebuild test -project MyApp.xcodeproj -scheme MyApp -destination 'platform=iOS Simulator,name=iPhone 15'
+```
+
+**Related Links:**
+- [**Building Multiple Targets**](https://developer.apple.com/documentation/xcode/building-multiple-targets)
+- [**Configuring Build Settings**](https://developer.apple.com/documentation/xcode/configuring-build-settings)
+
+### 🔍 Advanced Analysis Options
+
+```bash
+# Analyze with specific SDK
+xcodebuild analyze -project MyApp.xcodeproj -scheme MyApp -sdk iphonesimulator
+
+# Analyze with custom build settings
+xcodebuild analyze -project MyApp.xcodeproj -scheme MyApp CLANG_ANALYZER_OUTPUT=plist-html
+
+# Analyze for different configurations
+xcodebuild analyze -project MyApp.xcodeproj -scheme MyApp -configuration Debug
+xcodebuild analyze -project MyApp.xcodeproj -scheme MyApp -configuration Release
+```
+
+**Related Links:**
+- [**CLANG Static Analyzer**](https://clang-analyzer.llvm.org/)
+- [**Build Settings Reference**](https://developer.apple.com/documentation/xcode/build-settings-reference)
+
+### 📦 Using Workspaces
+
+```bash
+# For .xcworkspace files (common with CocoaPods)
+xcodebuild -workspace MyApp.xcworkspace -scheme MyApp clean build analyze
+
+# With multiple schemes
+xcodebuild -workspace MyApp.xcworkspace -scheme "MyApp-Development" analyze
+xcodebuild -workspace MyApp.xcworkspace -scheme "MyApp-Production" analyze
+```
+
+**Related Links:**
+- [**Working with Workspaces**](https://developer.apple.com/documentation/xcode/working-with-workspaces)
+- [**Creating Schemes**](https://developer.apple.com/documentation/xcode/customizing-the-build-schemes-for-a-project)
+
+### 📊 Output and Reporting
+
+```bash
+# Save build logs to file
+xcodebuild build -project MyApp.xcodeproj -scheme MyApp > build.log 2>&1
+
+# Generate JSON compilation database (useful for other tools)
+xcodebuild -project MyApp.xcodeproj -scheme MyApp | xcpretty -r json-compilation-database
+
+# Analyze with detailed output
+xcodebuild analyze -project MyObjcApp.xcodeproj -scheme MyObjcApp CLANG_ANALYZER_OUTPUT_DIR=analyzer_results
+```
+
+**Related Links:**
+- [**xcpretty Tool**](https://github.com/xcpretty/xcpretty) - Format xcodebuild output
+- [**Code Coverage**](https://developer.apple.com/documentation/xcode/code-coverage) - Generating test coverage reports
+
+### 🔄 CI/CD Integration Examples
+
+```bash
+#!/bin/bash
+# Example CI script
+
+PROJECT="MyApp.xcodeproj"
+SCHEME="MyApp"
+DESTINATION="platform=iOS Simulator,name=iPhone 15,OS=latest"
+
+echo "🧹 Cleaning project..."
+xcodebuild clean -project $PROJECT -scheme $SCHEME
+
+echo "🔍 Running static analysis..."
+xcodebuild analyze -project $PROJECT -scheme $SCHEME
+
+if [ $? -eq 0 ]; then
+    echo "✅ Static analysis passed"
+else
+    echo "❌ Static analysis found issues"
+    exit 1
+fi
+
+echo "🏗️ Building project..."
+xcodebuild build -project $PROJECT -scheme $SCHEME -configuration Debug
+
+echo "🧪 Running tests..."
+xcodebuild test -project $PROJECT -scheme $SCHEME -destination "$DESTINATION"
+```
+
+**Related Links:**
+- [**Xcode Cloud**](https://developer.apple.com/xcode-cloud/) - Apple's CI/CD service
+- [**Fastlane**](https://docs.fastlane.tools/) - Automation tool for iOS builds
+
+### 🛠️ Common Issues and Solutions
+
+```bash
+# Fix: "Scheme MyApp is not configured for building"
+xcodebuild -list # View available schemes and configurations
+
+# Fix: Code signing issues
+xcodebuild -project MyApp.xcodeproj -scheme MyApp -allowProvisioningUpdates
+
+# Fix: Simulator not available
+xcrun simctl list devices # List available simulators
+
+# Fix: Analyze doesn't show warnings
+xcodebuild analyze -project MyApp.xcodeproj -scheme MyApp CLANG_ANALYZER_VERBOSE=YES
+```
+
+**Related Links:**
+- [**Troubleshooting Common Issues**](https://developer.apple.com/documentation/xcode/troubleshooting-common-build-issues)
+- [**Code Signing Guide**](https://developer.apple.com/documentation/xcode/code-signing)
+
+### 📋 Using xcodebuild with Fastlane
+
+If you're using Fastlane, you can integrate analysis into your lanes:
+
+```ruby
+# Fastfile
+lane :analyze do
+  # Clean
+  xcodebuild(
+    project: "MyApp.xcodeproj",
+    scheme: "MyApp",
+    action: "clean"
+  )
+  
+  # Analyze
+  xcodebuild(
+    project: "MyApp.xcodeproj", 
+    scheme: "MyApp",
+    action: "analyze",
+    configuration: "Debug"
+  )
+end
+```
+
+**Related Links:**
+- [**Fastlane xcodebuild Action**](https://docs.fastlane.tools/actions/xcodebuild/)
+- [**Fastlane iOS Guide**](https://docs.fastlane.tools/getting-started/ios/setup/)
+
+### 🔧 Environment Variables for Enhanced Analysis
+
+```bash
+# Enable more detailed analysis
+export CLANG_ANALYZER_VERBOSE=YES
+export CLANG_ANALYZER_OUTPUT=plist-html
+export CLANG_ANALYZER_OUTPUT_DIR="$(pwd)/clang-reports"
+
+# Run analysis with enhanced settings
+xcodebuild analyze -project MyApp.xcodeproj -scheme MyApp
+```
+
+**Related Links:**
+- [**Environment Variables**](https://developer.apple.com/documentation/xcode/configuring-build-settings-using-environment-variables)
+- [**LLVM/Clang Documentation**](https://clang.llvm.org/docs/ClangStaticAnalyzer.html)
+
+### 🌐 Additional Resources
+- [**Apple Developer Forums**](https://developer.apple.com/forums/) - Community support
+- [**Stack Overflow - xcodebuild**](https://stackoverflow.com/questions/tagged/xcodebuild) - Common questions and solutions
+- [**WWDC Videos**](https://developer.apple.com/videos/) - Latest Xcode features and best practices
+
+These commands and resources provide comprehensive build and analysis capabilities for Xcode projects, helping you maintain code quality and catch issues early in the development process.
